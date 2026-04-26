@@ -10,7 +10,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 import reactor.test.StepVerifier;
 
 import java.math.BigDecimal;
-import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -32,23 +31,7 @@ class BeerClientImplTest {
     @Autowired
     private BeerClient beerClient;
 
-    /**
-     * Given the remote beer service is available,
-     * when the client requests the raw beer payload,
-     * then the client should receive a non-null and non-blank response body.
-     */
-    @Test
-    @DisplayName("given remote beer service when list beers raw then return raw response body")
-    void givenRemoteBeerService_whenListBeersRaw_thenReturnRawResponseBody() {
-        StepVerifier.create(beerClient.listBeersRaw())
-                .assertNext(body -> {
-                    log.info("Raw response body: {}", body);
 
-                    assertThat(body).isNotNull();
-                    assertThat(body).isNotBlank();
-                })
-                .verifyComplete();
-    }
 
     /**
      * Given a beer created specifically for this test,
@@ -77,6 +60,86 @@ class BeerClientImplTest {
     }
 
     /**
+     * Given a beer created with a unique name,
+     * when the client filters by beer name,
+     * then the response should contain the expected saved beer.
+     */
+    @Test
+    @DisplayName("given saved beer with unique name when list beers by beer name then return matching beer dto")
+    void givenSavedBeerWithUniqueName_whenListBeersByBeerName_thenReturnMatchingBeerDto() {
+        String uniqueSuffix = UUID.randomUUID().toString().substring(0, 8);
+        String uniqueBeerName = "Name-" + uniqueSuffix;
+        BeerDTO savedBeer = createTestBeerAndReturnSavedEntity(uniqueBeerName, "IPA");
+
+        StepVerifier.create(
+                        beerClient.listBeersByBeerName(uniqueBeerName)
+                                .filter(beerDTO -> savedBeer.getBeerId().equals(beerDTO.getBeerId()))
+                )
+                .assertNext(foundBeer -> {
+                    log.info("Matching BeerDTO by name: {}", foundBeer);
+
+                    assertValidBeerDto(foundBeer);
+                    assertThat(foundBeer.getBeerId()).isEqualTo(savedBeer.getBeerId());
+                    assertThat(foundBeer.getBeerName()).isEqualTo(uniqueBeerName);
+                })
+                .verifyComplete();
+    }
+
+    /**
+     * Given a beer created with a unique style,
+     * when the client filters by beer style,
+     * then the response should contain the expected saved beer.
+     */
+    @Test
+    @DisplayName("given saved beer with unique style when list beers by beer style then return matching beer dto")
+    void givenSavedBeerWithUniqueStyle_whenListBeersByBeerStyle_thenReturnMatchingBeerDto() {
+        String uniqueSuffix = UUID.randomUUID().toString().substring(0, 8);
+        String uniqueBeerStyle = "Style-" + uniqueSuffix;
+        BeerDTO savedBeer = createTestBeerAndReturnSavedEntity("StyleTest-" + uniqueSuffix, uniqueBeerStyle);
+
+        StepVerifier.create(
+                        beerClient.listBeersByBeerStyle(uniqueBeerStyle)
+                                .filter(beerDTO -> savedBeer.getBeerId().equals(beerDTO.getBeerId()))
+                )
+                .assertNext(foundBeer -> {
+                    log.info("Matching BeerDTO by style: {}", foundBeer);
+
+                    assertValidBeerDto(foundBeer);
+                    assertThat(foundBeer.getBeerId()).isEqualTo(savedBeer.getBeerId());
+                    assertThat(foundBeer.getBeerStyle()).isEqualTo(uniqueBeerStyle);
+                })
+                .verifyComplete();
+    }
+
+    /**
+     * Given both filters are provided and both match a saved beer,
+     * when the client calls listBeersDto with both query parameters,
+     * then the response should contain the expected saved beer.
+     */
+    @Test
+    @DisplayName("given both filters when both match then list beers dto returns matching beer dto")
+    void givenBothFilters_whenBothMatch_thenListBeersDtoReturnsMatchingBeerDto() {
+        String uniqueSuffix = UUID.randomUUID().toString().substring(0, 8);
+        String uniqueBeerName = "PriorityName-" + uniqueSuffix;
+        String savedBeerStyle = "PriorityStyle-" + uniqueSuffix;
+        BeerDTO savedBeer = createTestBeerAndReturnSavedEntity(uniqueBeerName, savedBeerStyle);
+
+        StepVerifier.create(
+                        beerClient.listBeersDto(uniqueBeerName, savedBeerStyle)
+                                .filter(beerDTO -> savedBeer.getBeerId().equals(beerDTO.getBeerId()))
+                )
+                .assertNext(foundBeer -> {
+                    log.info("Matching BeerDTO by combined filters: {}", foundBeer);
+
+                    assertValidBeerDto(foundBeer);
+                    assertThat(foundBeer.getBeerId()).isEqualTo(savedBeer.getBeerId());
+                    assertThat(foundBeer.getBeerName()).isEqualTo(uniqueBeerName);
+                    assertThat(foundBeer.getBeerStyle()).isEqualTo(savedBeerStyle);
+                })
+                .verifyComplete();
+    }
+
+    /**
      * Given a beer created specifically for this test,
      * when the client retrieves the beer by id,
      * then the client should return the matching validated BeerDTO.
@@ -97,6 +160,19 @@ class BeerClientImplTest {
                     assertThat(foundBeer.getUpc()).isEqualTo(savedBeer.getUpc());
                 })
                 .verifyComplete();
+    }
+
+    /**
+     * Given a missing beer id,
+     * when the client retrieves the beer by id,
+     * then the client should emit an error signal.
+     */
+    @Test
+    @DisplayName("given missing beer id when get beer by id then return error")
+    void givenMissingBeerId_whenGetBeerById_thenReturnError() {
+        StepVerifier.create(beerClient.getBeerById("missing-id"))
+                .expectError()
+                .verify();
     }
 
     /**
@@ -180,19 +256,6 @@ class BeerClientImplTest {
 
     /**
      * Given a missing beer id,
-     * when the client retrieves the beer by id,
-     * then the client should emit an error signal.
-     */
-    @Test
-    @DisplayName("given missing beer id when get beer by id then return error")
-    void givenMissingBeerId_whenGetBeerById_thenReturnError() {
-        StepVerifier.create(beerClient.getBeerById("missing-id"))
-                .expectError()
-                .verify();
-    }
-
-    /**
-     * Given a missing beer id,
      * when the client updates the beer,
      * then the client should emit an error signal.
      */
@@ -237,9 +300,18 @@ class BeerClientImplTest {
     private BeerDTO getTestBeerDto() {
         String uniqueSuffix = UUID.randomUUID().toString().substring(0, 8);
 
+        return getTestBeerDto("Space Dust " + uniqueSuffix, "IPA");
+    }
+
+    /**
+     * Returns a valid BeerDTO fixture with explicit name and style values.
+     */
+    private BeerDTO getTestBeerDto(String beerName, String beerStyle) {
+        String uniqueSuffix = UUID.randomUUID().toString().substring(0, 8);
+
         return BeerDTO.builder()
-                .beerName("Space Dust " + uniqueSuffix)
-                .beerStyle("IPA")
+                .beerName(beerName)
+                .beerStyle(beerStyle)
                 .upc("UPC-" + uniqueSuffix)
                 .price(new BigDecimal("10.99"))
                 .quantityOnHand(12)
@@ -259,7 +331,16 @@ class BeerClientImplTest {
      * Creates a beer through the remote beer API and returns the saved entity.
      */
     private BeerDTO createTestBeerAndReturnSavedEntity() {
-        BeerDTO testBeerDto = getTestBeerDto();
+        return createTestBeerAndReturnSavedEntity(null, null);
+    }
+
+    /**
+     * Creates a beer through the remote beer API using provided name/style values.
+     */
+    private BeerDTO createTestBeerAndReturnSavedEntity(String beerName, String beerStyle) {
+        BeerDTO testBeerDto = (beerName == null || beerStyle == null)
+                ? getTestBeerDto()
+                : getTestBeerDto(beerName, beerStyle);
 
         BeerDTO savedBeer = beerClient.createBeer(testBeerDto).block();
 
